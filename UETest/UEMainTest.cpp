@@ -1,15 +1,5 @@
-#include <Windows.h>
-#include <d3d11.h>
-#include <d3dcompiler.h>
-#include <DirectXMath.h>
-#include <thread>
-#include <vector>
+#include "UETest.h"
 
-using namespace DirectX;
-
-void RenderThread(HWND hwnd);
-
-// Global variables
 HWND g_hwnd;
 ID3D11Device* g_pd3dDevice = nullptr;
 ID3D11DeviceContext* g_pImmediateContext = nullptr;
@@ -34,6 +24,8 @@ ID3D11SamplerState* g_pSamplerState = nullptr; // ²ÉÑùÆ÷×´Ì¬
 
 bool GRHISupportsAsyncTextureCreation = false;
 
+void RenderThread(HWND hwnd);
+
 
 #define CHECK_RESULT(hr) \
 if (FAILED(hr)) \
@@ -53,13 +45,20 @@ if (FAILED(hr)) \
 } 
 
 // Entry point
-int  InitInstance(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow)
+void  InitDevice()
 {
+
+	RECT rect;
+	GetClientRect(g_hwnd, &rect);
+
+	int width = rect.right - rect.left;
+	int height = rect.bottom - rect.top;
+
 	// Initialize Direct3D
 	DXGI_SWAP_CHAIN_DESC sd = {};
 	sd.BufferCount = 1;
-	sd.BufferDesc.Width = 800;
-	sd.BufferDesc.Height = 600;
+	sd.BufferDesc.Width = width;
+	sd.BufferDesc.Height = height;
 	sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	sd.BufferDesc.RefreshRate.Numerator = 60;
 	sd.BufferDesc.RefreshRate.Denominator = 1;
@@ -85,26 +84,22 @@ int  InitInstance(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine
 
 	g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, nullptr);
 
+
+}
+
+std::thread* g_pRenderThread = nullptr;
+
+void StartRenderThead()
+{
 	// Start render thread
-	std::thread renderThread(RenderThread, g_hwnd);
+	g_pRenderThread = new  std::thread(RenderThread, g_hwnd);
+}
 
 
-	ShowWindow(g_hwnd, SW_SHOWDEFAULT);
-	UpdateWindow(g_hwnd);
-
-	// Message loop
-	MSG msg = {};
-	while (msg.message != WM_QUIT)
-	{
-		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-	}
-
+void WaitRenderThead()
+{
 	// Wait for render thread to complete
-	renderThread.join();
+	g_pRenderThread->join();
 
 	// Cleanup
 	g_pRenderTargetView->Release();
@@ -123,24 +118,9 @@ int  InitInstance(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine
 	g_pTextureSRV->Release();
 	g_pSamplerState->Release();
 
-	return static_cast<int>(msg.wParam);
+	delete g_pRenderThread;
+	g_pRenderThread = nullptr;
 }
-
-// Window procedure
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	switch (uMsg)
-	{
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		g_bQuit = true;
-
-		return 0;
-	}
-
-	return DefWindowProc(hwnd, uMsg, wParam, lParam);
-}
-
 
 struct Vertex {
 	DirectX::XMFLOAT3 position;
@@ -448,6 +428,8 @@ void CreateResource()
 // Render thread function
 void RenderThread(HWND hwnd)
 {
+	InitDevice();
+
 	// Set the viewport
 	D3D11_VIEWPORT vp;
 	vp.Width = 800;

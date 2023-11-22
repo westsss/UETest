@@ -52,6 +52,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
 
+    WaitRenderThead();
+
     return (int) msg.wParam;
 }
 
@@ -100,10 +102,14 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
       CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
 
+   g_hwnd = hWnd;
+
    if (!hWnd)
    {
       return FALSE;
    }
+
+   StartRenderThead();
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -151,6 +157,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_DESTROY:
+        g_bQuit = true;
         PostQuitMessage(0);
         break;
     default:
