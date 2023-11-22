@@ -22,6 +22,9 @@ ID3D11Texture2D* g_pTexture = NULL;
 ID3D11ShaderResourceView* g_pTextureSRV = NULL;
 ID3D11SamplerState* g_pSamplerState = nullptr; // 采样器状态
 
+ID3D11Texture2D* depthBuffer = nullptr; 
+ID3D11DepthStencilView* depthStencilView = nullptr;
+
 bool GRHISupportsAsyncTextureCreation = false;
 
 void RenderThread(HWND hwnd);
@@ -44,6 +47,9 @@ if (FAILED(hr)) \
     } \
 } 
 
+int BackBufferWidth = 0;
+int BackBufferHeight = 0;
+
 // Entry point
 void  InitDevice()
 {
@@ -53,6 +59,9 @@ void  InitDevice()
 
 	int width = rect.right - rect.left;
 	int height = rect.bottom - rect.top;
+
+	BackBufferWidth = width;
+	BackBufferHeight = height;
 
 	// Initialize Direct3D
 	DXGI_SWAP_CHAIN_DESC sd = {};
@@ -81,10 +90,6 @@ void  InitDevice()
 	g_pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
 	g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_pRenderTargetView);
 	pBackBuffer->Release();
-
-	g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, nullptr);
-
-
 }
 
 std::thread* g_pRenderThread = nullptr;
@@ -117,6 +122,9 @@ void WaitRenderThead()
 	g_pTexture->Release();
 	g_pTextureSRV->Release();
 	g_pSamplerState->Release();
+
+	depthBuffer->Release();
+	depthStencilView->Release();
 
 	delete g_pRenderThread;
 	g_pRenderThread = nullptr;
@@ -423,6 +431,35 @@ void CreateResource()
 	samplerDesc.MaxLOD = 0; // 最大 Mip 级别
 
 	CHECK_RESULT(g_pd3dDevice->CreateSamplerState(&samplerDesc, &g_pSamplerState));
+
+
+	// 描述深度缓冲区
+	DXGI_SAMPLE_DESC sampleDesc;
+	sampleDesc.Count = 1;  // 采样数
+	sampleDesc.Quality = 0;  // 质量级别
+	DXGI_FORMAT depthBufferFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;  // 深度缓冲区格式
+
+	// 创建深度缓冲区纹理
+	D3D11_TEXTURE2D_DESC textureDesc;
+	ZeroMemory(&textureDesc, sizeof(textureDesc));
+	textureDesc.Width = BackBufferWidth;  // 缓冲区宽度
+	textureDesc.Height = BackBufferHeight;  // 缓冲区高度
+	textureDesc.MipLevels = 1;
+	textureDesc.ArraySize = 1;
+	textureDesc.Format = depthBufferFormat;
+	textureDesc.SampleDesc = sampleDesc;
+	textureDesc.Usage = D3D11_USAGE_DEFAULT;
+	textureDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	CHECK_RESULT(g_pd3dDevice->CreateTexture2D(&textureDesc, nullptr, &depthBuffer));
+
+
+	// 创建深度模板视图
+	D3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc;
+	ZeroMemory(&depthStencilViewDesc, sizeof(depthStencilViewDesc));
+	depthStencilViewDesc.Format = depthBufferFormat;
+	depthStencilViewDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+	depthStencilViewDesc.Texture2D.MipSlice = 0;
+	CHECK_RESULT(g_pd3dDevice->CreateDepthStencilView(depthBuffer, &depthStencilViewDesc, &depthStencilView));
 }
 
 // Render thread function
@@ -432,11 +469,11 @@ void RenderThread(HWND hwnd)
 
 	// Set the viewport
 	D3D11_VIEWPORT vp;
-	vp.Width = 800;
-	vp.Height = 600;
+	vp.Width = BackBufferWidth;
+	vp.Height = BackBufferHeight;
 	vp.MinDepth = 0.0f;
 	vp.MaxDepth = 1.0f;
-	vp.TopLeftX = 0;
+	vp.TopLeftX = 0;   
 	vp.TopLeftY = 0;
 	g_pImmediateContext->RSSetViewports(1, &vp);
 
@@ -452,6 +489,8 @@ void RenderThread(HWND hwnd)
 	{
 		// Clear the back buffer
 		float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+		g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, depthStencilView);
+		g_pImmediateContext->ClearDepthStencilView(depthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
 		g_pImmediateContext->ClearRenderTargetView(g_pRenderTargetView, clearColor);
 
 		// Perform rendering operations
@@ -475,7 +514,7 @@ void RenderThread(HWND hwnd)
 		// 设置采样器状态
 		g_pImmediateContext->PSSetSamplers(0, 1, &g_pSamplerState);
 
-		g_pImmediateContext->DrawIndexed(12, 0, 0);
+		g_pImmediateContext->DrawIndexed(36, 0, 0);
 
 		// Present the back buffer to the screen
 		g_pSwapChain->Present(1, 0);
