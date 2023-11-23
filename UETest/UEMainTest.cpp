@@ -321,36 +321,46 @@ void StreamIn()
 	g_pd3dDevice->CreateShaderResourceView(g_pTexture, &srvDesc, &g_pTextureSRV);
 }
 
+bool g_bSyncCreateTexture = true;
+
+void InitRHIStreamableTextureResource()
+{
+	// 定义纹理描述
+	D3D11_TEXTURE2D_DESC texDesc;
+	ZeroMemory(&texDesc, sizeof(texDesc));
+	texDesc.Width = 1 << (DestMipMap - 1);  // 纹理宽度
+	texDesc.Height = 1 << (DestMipMap - 1);  // 纹理高度
+	texDesc.MipLevels = DestMipMap;
+	texDesc.ArraySize = 1;
+	texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // 像素格式
+	texDesc.SampleDesc.Count = 1;
+	texDesc.Usage = D3D11_USAGE_DEFAULT;
+	texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	texDesc.CPUAccessFlags = 0;
+	texDesc.MiscFlags = 0;
+
+	std::vector<ColorData> imageData;
+	CreateMap(imageData, texDesc.Width, texDesc.Height);
+
+
+	Command* pCommand = new Command();
+
+	// 创建纹理
+	CHECK_RESULT(g_pd3dDevice->CreateTexture2D(&texDesc, nullptr, &pCommand->IntermediateTextureRHI));
+	g_pImmediateContext->UpdateSubresource(pCommand->IntermediateTextureRHI, 0, nullptr, imageData.data(), texDesc.Width * sizeof(DWORD), 0);
+
+
+	g_CommandList.Enqueue(pCommand);
+}
+
 void AsyncCreateTexture()
 {
 	while (!g_bQuit)
 	{
-
-		// 定义纹理描述
-		D3D11_TEXTURE2D_DESC texDesc;
-		ZeroMemory(&texDesc, sizeof(texDesc));
-		texDesc.Width = 1 << (DestMipMap - 1);  // 纹理宽度
-		texDesc.Height = 1 << (DestMipMap - 1);  // 纹理高度
-		texDesc.MipLevels = DestMipMap;
-		texDesc.ArraySize = 1;
-		texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // 像素格式
-		texDesc.SampleDesc.Count = 1;
-		texDesc.Usage = D3D11_USAGE_DEFAULT;
-		texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-		texDesc.CPUAccessFlags = 0;
-		texDesc.MiscFlags = 0;
-
-		std::vector<ColorData> imageData;
-		CreateMap(imageData, texDesc.Width, texDesc.Height);
-
-
-		Command* pCommand = new Command();
-
-		// 创建纹理
-		CHECK_RESULT(g_pd3dDevice->CreateTexture2D(&texDesc, nullptr, &pCommand->IntermediateTextureRHI));
-		g_pImmediateContext->UpdateSubresource(pCommand->IntermediateTextureRHI, 0, nullptr, imageData.data(), texDesc.Width * sizeof(DWORD), 0);
-
-		g_CommandList.Enqueue(pCommand);
+		if (!g_bSyncCreateTexture)
+		{
+			InitRHIStreamableTextureResource();
+		}
 	}
 }
 
@@ -722,6 +732,10 @@ void RenderThread(HWND hwnd)
 	// Main rendering loop
 	while (!g_bQuit)
 	{
+		if (g_bSyncCreateTexture)
+		{
+			InitRHIStreamableTextureResource();
+		}
 
 		Command* pCommand = g_CommandList.Dequeue();
 		if (pCommand)
