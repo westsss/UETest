@@ -402,7 +402,7 @@ void CreateResource()
 	ZeroMemory(&initData, sizeof(initData));
 	initData.pSysMem = imageData.data();  // 设置纹理数据，可以是一个有效的像素数据指针
 	initData.SysMemPitch = texDesc.Width * 4/* 纹理数据每行占用的字节数 */;  // 设置纹理数据每行的字节数
-	g_pd3dDevice->CreateTexture2D(&texDesc, &initData, &g_pTexture);
+	CHECK_RESULT(g_pd3dDevice->CreateTexture2D(&texDesc, &initData, &g_pTexture));
 
 	// 创建纹理的着色器资源视图
 	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
@@ -460,6 +460,11 @@ void CreateResource()
 	depthStencilViewDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
 	depthStencilViewDesc.Texture2D.MipSlice = 0;
 	CHECK_RESULT(g_pd3dDevice->CreateDepthStencilView(depthBuffer, &depthStencilViewDesc, &depthStencilView));
+}
+
+void AsyncCreateTexture()
+{
+
 }
 
 // Render thread function

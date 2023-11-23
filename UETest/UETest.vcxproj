@@ -134,6 +134,7 @@
     <ClInclude Include="UETest.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="LockFreePointerFIFOBase.cpp" />
     <ClCompile Include="UEMainTest.cpp" />
     <ClCompile Include="UETest.cpp" />
   </ItemGroup>
