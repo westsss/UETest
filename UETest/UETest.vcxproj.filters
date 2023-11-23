@@ -35,7 +35,7 @@
     <ClCompile Include="UEMainTest.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="LockFreePointerFIFOBase.cpp">
+    <ClCompile Include="LockFreePointerFIFOBase.h">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
