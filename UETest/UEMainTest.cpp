@@ -1,6 +1,8 @@
 #include "UETest.h"
 #include "LockFreePointerFIFOBase.h"
 #include <cmath>
+#include <iostream>
+#include <string>
 
 HWND g_hwnd;
 ID3D11Device* g_pd3dDevice = nullptr;
@@ -28,6 +30,7 @@ ID3D11Texture2D* depthBuffer = nullptr;
 ID3D11DepthStencilView* depthStencilView = nullptr;
 
 bool GRHISupportsAsyncTextureCreation = false;
+std::atomic<long> g_TextureCount;
 
 void RenderThread(HWND hwnd);
 
@@ -166,6 +169,7 @@ public:
 	~Command()
 	{
 		SAFE_RELEASE(IntermediateTextureRHI);
+		g_TextureCount--;
 	}
 
 	void Execute()
@@ -321,7 +325,10 @@ void StreamIn()
 	g_pd3dDevice->CreateShaderResourceView(g_pTexture, &srvDesc, &g_pTextureSRV);
 }
 
-bool g_bSyncCreateTexture = true;
+bool g_bSyncCreateTexture = false;
+HANDLE g_hConsole;
+
+
 
 void InitRHIStreamableTextureResource()
 {
@@ -349,6 +356,14 @@ void InitRHIStreamableTextureResource()
 	CHECK_RESULT(g_pd3dDevice->CreateTexture2D(&texDesc, nullptr, &pCommand->IntermediateTextureRHI));
 	g_pImmediateContext->UpdateSubresource(pCommand->IntermediateTextureRHI, 0, nullptr, imageData.data(), texDesc.Width * sizeof(DWORD), 0);
 
+	g_TextureCount++;
+	// 输出内容到控制台窗口
+	
+	std::string str = std::to_string(g_TextureCount);
+	str += "\n";
+
+	DWORD bytesWritten;
+	WriteConsoleA(g_hConsole, str.c_str(), static_cast<DWORD>(str.length()), &bytesWritten, nullptr);
 
 	g_CommandList.Enqueue(pCommand);
 }
@@ -366,6 +381,10 @@ void AsyncCreateTexture()
 
 void StartRenderThead()
 {
+	// 创建新的控制台窗口
+	AllocConsole();
+	g_hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
 	InitDevice();
 
 	// Start render thread
@@ -407,6 +426,10 @@ void WaitRenderThead()
 
 	delete g_pAsyncCreateTextureThread;
 	g_pAsyncCreateTextureThread = nullptr;
+
+	// 关闭控制台窗口
+	FreeConsole();
+	g_hConsole = INVALID_HANDLE_VALUE;
 }
 
 struct Vertex {
@@ -746,36 +769,36 @@ void RenderThread(HWND hwnd)
 			pCommand = nullptr;
 		}
 
-		// Clear the back buffer
-		float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-		g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, depthStencilView);
-		g_pImmediateContext->ClearDepthStencilView(depthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
-		g_pImmediateContext->ClearRenderTargetView(g_pRenderTargetView, clearColor);
-
-		// Perform rendering operations
-		UINT stride = sizeof(Vertex);
-		UINT offset = 0;
-
-		g_pImmediateContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-		g_pImmediateContext->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
-		g_pImmediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		g_pImmediateContext->IASetInputLayout(inputLayout);
-
-		g_pImmediateContext->VSSetShader(vertexShader, nullptr, 0);
-		g_pImmediateContext->PSSetShader(pixelShader, nullptr, 0);
-
-		// 将常量缓冲区绑定到顶点着色器阶段的指定寄存器槽
-		g_pImmediateContext->VSSetConstantBuffers(0, 1, &constantBuffer);
-
-		// 设置纹理资源
-		g_pImmediateContext->PSSetShaderResources(0, 1, &g_pTextureSRV);
-
-		// 设置采样器状态
-		g_pImmediateContext->PSSetSamplers(0, 1, &g_pSamplerState);
-
-		g_pImmediateContext->DrawIndexed(36, 0, 0);
-
-		// Present the back buffer to the screen
-		g_pSwapChain->Present(1, 0);
+ 		// Clear the back buffer
+ 		float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+ 		g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, depthStencilView);
+ 		g_pImmediateContext->ClearDepthStencilView(depthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
+ 		g_pImmediateContext->ClearRenderTargetView(g_pRenderTargetView, clearColor);
+ 
+ 		// Perform rendering operations
+ 		UINT stride = sizeof(Vertex);
+ 		UINT offset = 0;
+ 
+ 		g_pImmediateContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+ 		g_pImmediateContext->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
+ 		g_pImmediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+ 		g_pImmediateContext->IASetInputLayout(inputLayout);
+ 
+ 		g_pImmediateContext->VSSetShader(vertexShader, nullptr, 0);
+ 		g_pImmediateContext->PSSetShader(pixelShader, nullptr, 0);
+ 
+ 		// 将常量缓冲区绑定到顶点着色器阶段的指定寄存器槽
+ 		g_pImmediateContext->VSSetConstantBuffers(0, 1, &constantBuffer);
+ 
+ 		// 设置纹理资源
+ 		g_pImmediateContext->PSSetShaderResources(0, 1, &g_pTextureSRV);
+ 
+ 		// 设置采样器状态
+ 		g_pImmediateContext->PSSetSamplers(0, 1, &g_pSamplerState);
+ 
+ 		g_pImmediateContext->DrawIndexed(36, 0, 0);
+ 
+ 		// Present the back buffer to the screen
+ 		g_pSwapChain->Present(1, 0);
 	}
 }
