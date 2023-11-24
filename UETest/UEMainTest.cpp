@@ -32,6 +32,9 @@ ID3D11DepthStencilView* depthStencilView = nullptr;
 bool GRHISupportsAsyncTextureCreation = false;
 std::atomic<long> g_TextureCount;
 
+bool g_bSyncCreateTexture = false;
+HANDLE g_hConsole;
+
 void RenderThread(HWND hwnd);
 
 
@@ -165,10 +168,17 @@ class Command
 public:
 	Command() : IntermediateTextureRHI(nullptr)
 	{
+
 	}
 	~Command()
 	{
 		SAFE_RELEASE(IntermediateTextureRHI);
+
+		std::string str = "Release IntermediateTextureRHI \n";
+
+		DWORD bytesWritten;
+		WriteConsoleA(g_hConsole, str.c_str(), static_cast<DWORD>(str.length()), &bytesWritten, nullptr);
+
 		g_TextureCount--;
 	}
 
@@ -324,11 +334,6 @@ void StreamIn()
 	srvDesc.Texture2D.MipLevels = 1;
 	g_pd3dDevice->CreateShaderResourceView(g_pTexture, &srvDesc, &g_pTextureSRV);
 }
-
-bool g_bSyncCreateTexture = false;
-HANDLE g_hConsole;
-
-
 
 void InitRHIStreamableTextureResource()
 {
