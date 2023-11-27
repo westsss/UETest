@@ -130,12 +130,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="framework.h" />
+    <ClInclude Include="LockFreePointerFIFOBase.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="UETest.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="LockFreePointerFIFOBase.h" />
     <ClCompile Include="UEMainTest.cpp" />
     <ClCompile Include="UETest.cpp" />
   </ItemGroup>
