@@ -158,7 +158,9 @@ void  InitDevice()
 }
 
 std::thread* g_pRenderThread = nullptr;
-std::thread* g_pAsyncCreateTextureThread = nullptr;
+
+int g_AsyncThreadNum = 1;
+std::vector<std::thread*> g_ListAsyncThread;
 
 int DestMipMap = 8;
 int SrcMipMap = 7;
@@ -394,7 +396,11 @@ void StartRenderThead()
 
 	// Start render thread
 	g_pRenderThread = new  std::thread(RenderThread, g_hwnd);
-	g_pAsyncCreateTextureThread =  new  std::thread(AsyncCreateTexture);
+
+	for (int idx = 0; idx < g_AsyncThreadNum; idx++)
+	{
+		g_ListAsyncThread.push_back(new std::thread(AsyncCreateTexture));
+	}
 }
 
 
@@ -404,7 +410,10 @@ void WaitRenderThead()
 	g_pRenderThread->join();
 
 	// Wait for AsyncCreate thread to complete
-	g_pAsyncCreateTextureThread->join();
+	for (auto AsyncThead : g_ListAsyncThread)
+	{
+		AsyncThead->join();
+	}
 
 	// Cleanup
 	g_pRenderTargetView->Release();
@@ -429,8 +438,13 @@ void WaitRenderThead()
 	delete g_pRenderThread;
 	g_pRenderThread = nullptr;
 
-	delete g_pAsyncCreateTextureThread;
-	g_pAsyncCreateTextureThread = nullptr;
+	// Wait for AsyncCreate thread to complete
+	for (auto AsyncThead : g_ListAsyncThread)
+	{
+		delete AsyncThead;
+	}
+
+	g_ListAsyncThread.clear();
 
 	// 关闭控制台窗口
 	FreeConsole();

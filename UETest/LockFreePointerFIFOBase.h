@@ -1,4 +1,5 @@
 #include <atomic>
+#include <windows.h>
 
 template<typename T>
 class FLockFreePointerFIFOBase
@@ -7,63 +8,74 @@ private:
 	struct Node
 	{
 		T* data;
-		std::atomic<Node*> next;
+		Node* next;
 
 		Node(T* data) : data(data), next(nullptr) {}
 	};
 
-	std::atomic<Node*> head;
-	std::atomic<Node*> tail;
+	Node* head;
+	Node* tail;
+
+	CRITICAL_SECTION cs; // 创建一个 Critical Section
 
 public:
-	FLockFreePointerFIFOBase() : head(nullptr), tail(nullptr) {}
+	FLockFreePointerFIFOBase() : head(nullptr), tail(nullptr) 
+	{
+		InitializeCriticalSection(&cs); // 初始化临界区
+	}
 
 	~FLockFreePointerFIFOBase()
 	{
-		while (Node* node = head.load())
+		while (Node* node = head)
 		{
-			head.store(node->next);
+			head = node->next;
 			delete node->data;
 			delete node;
 		}
+
+		DeleteCriticalSection(&cs); // 销毁临界区
 	}
 
 	void Enqueue(T* data)
 	{
 		Node* newNode = new Node(data);
-		newNode->next.store(nullptr);
+		newNode->next = nullptr;
 
-		Node* curTail = tail.exchange(newNode);
+		EnterCriticalSection(&cs); // 进入临界区
 
-		if (curTail)
+		if (tail)
 		{
-			curTail->next.store(newNode);
+			tail->next = newNode;
 		}
 		else
 		{
-			head.store(newNode);
+			head = newNode;
 		}
+
+		tail = newNode;
+
+		LeaveCriticalSection(&cs); // 离开临界区
 	}
 
 	T* Dequeue()
 	{
-		Node* curHead = head.load();
-		
-		while (curHead)
-		{
-			Node* nextNode = curHead->next.load();
+		T* data = nullptr;
 
-			if (head.compare_exchange_weak(curHead, nextNode))
-			{
-				Node* curTail = curHead;
-				tail.compare_exchange_strong(curTail, nullptr);
-				
-				T* data = curHead->data;
-				delete curHead;
-				return data;
-			}
+		EnterCriticalSection(&cs); // 进入临界区
+
+		if (head)
+		{
+			data = head->data;
+			head = head->next;
 		}
 
-		return nullptr; // 队列为空
+		if (head == nullptr)
+		{
+			tail = nullptr;
+		}
+
+		LeaveCriticalSection(&cs); // 离开临界区
+
+		return data; // 队列为空
 	}
 };
