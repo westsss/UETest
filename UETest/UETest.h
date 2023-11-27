@@ -16,4 +16,9 @@ extern HWND g_hwnd;
 extern void  StartRenderThead();
 extern void  WaitRenderThead();
 
+extern int SyncFrame;
+extern void  SyncRenderThead();
+
+extern void  SyncAsyncThread();
+
 extern bool g_bQuit;
