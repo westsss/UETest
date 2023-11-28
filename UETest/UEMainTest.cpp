@@ -27,6 +27,8 @@ ID3D11Texture2D* g_pTexture = NULL;
 ID3D11ShaderResourceView* g_pTextureSRV = NULL;
 ID3D11SamplerState* g_pSamplerState = nullptr; // 采样器状态
 
+ID3D11Texture2D* g_pCheckTexture = NULL;
+
 ID3D11Texture2D* depthBuffer = nullptr; 
 ID3D11DepthStencilView* depthStencilView = nullptr;
 
@@ -35,35 +37,15 @@ bool GRHISupportsAsyncTextureCreation = false;
 bool g_bSyncCreateTexture = false;
 HANDLE g_hConsole;
 
-void RenderThread(HWND hwnd);
+std::thread* g_pRenderThread = nullptr;
 
+int g_AsyncThreadNum = 6;
+std::vector<std::thread*> g_ListAsyncThread;
 
-#define CHECK_RESULT(hr) \
-if (FAILED(hr)) \
-{ \
-    LPWSTR pErrorMessage = nullptr; \
-    DWORD result = FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, \
-        nullptr, hr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPWSTR)&pErrorMessage, 0, nullptr); \
-    if (result != 0) \
-    { \
-        MessageBox(nullptr, pErrorMessage, L"Error", MB_OK | MB_ICONERROR); \
-        LocalFree(pErrorMessage); \
-    } \
-    else \
-    { \
-        MessageBox(nullptr, L"Get Error Failed", L"Error", MB_OK | MB_ICONERROR); \
-    } \
-} 
+int g_MaxAsyncTexturePerFrame = 512;
 
-#define SAFE_RELEASE(ptr) \
-		if(ptr)	\
-		{	\
-			ptr->Release();	\
-			ptr = nullptr;	\
-		}
-
-int BackBufferWidth = 0;
-int BackBufferHeight = 0;
+int DestMipMap = 9;
+int SrcMipMap = 7;
 
 struct ColorData
 {
@@ -115,6 +97,38 @@ struct ColorDataFloat
 	}
 };
 
+std::vector<std::vector<ColorData>> g_MipMapData;
+
+void RenderThread(HWND hwnd);
+
+
+#define CHECK_RESULT(hr) \
+if (FAILED(hr)) \
+{ \
+    LPWSTR pErrorMessage = nullptr; \
+    DWORD result = FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, \
+        nullptr, hr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPWSTR)&pErrorMessage, 0, nullptr); \
+    if (result != 0) \
+    { \
+        MessageBox(nullptr, pErrorMessage, L"Error", MB_OK | MB_ICONERROR); \
+        LocalFree(pErrorMessage); \
+    } \
+    else \
+    { \
+        MessageBox(nullptr, L"Get Error Failed", L"Error", MB_OK | MB_ICONERROR); \
+    } \
+} 
+
+#define SAFE_RELEASE(ptr) \
+		if(ptr)	\
+		{	\
+			ptr->Release();	\
+			ptr = nullptr;	\
+		}
+
+int BackBufferWidth = 0;
+int BackBufferHeight = 0;
+
 // Entry point
 void  InitDevice()
 {
@@ -158,16 +172,6 @@ void  InitDevice()
 
 	pBackBuffer->Release();
 }
-
-std::thread* g_pRenderThread = nullptr;
-
-int g_AsyncThreadNum = 5;
-std::vector<std::thread*> g_ListAsyncThread;
-
-std::atomic<int> g_MaxAsyncTexturePerFrame;
-
-int DestMipMap = 8;
-int SrcMipMap = 7;
 
 class Command
 {
@@ -303,39 +307,6 @@ void GenerateMipmap(std::vector<ColorData>& imageData, std::vector<std::vector<C
 }
 
 
-void StreamIn()
-{
-	// 定义纹理描述
-	D3D11_TEXTURE2D_DESC texDesc;
-	ZeroMemory(&texDesc, sizeof(texDesc));
-	texDesc.Width = 512;  // 纹理宽度
-	texDesc.Height = 512;  // 纹理高度
-	texDesc.MipLevels = 1;
-	texDesc.ArraySize = 1;
-	texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // 像素格式
-	texDesc.SampleDesc.Count = 1;
-	texDesc.Usage = D3D11_USAGE_DEFAULT;
-	texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-	texDesc.CPUAccessFlags = 0;
-	texDesc.MiscFlags = 0;
-
-	// 创建纹理
-	D3D11_SUBRESOURCE_DATA initData;
-	ZeroMemory(&initData, sizeof(initData));
-	initData.pSysMem = nullptr;  // 设置纹理数据，可以是一个有效的像素数据指针
-	initData.SysMemPitch = 0;  // 设置纹理数据每行的字节数
-	CHECK_RESULT(g_pd3dDevice->CreateTexture2D(&texDesc, &initData, &g_pTexture));
-
-	// 创建纹理的着色器资源视图
-	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-	ZeroMemory(&srvDesc, sizeof(srvDesc));
-	srvDesc.Format = texDesc.Format;
-	srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MostDetailedMip = 0;
-	srvDesc.Texture2D.MipLevels = 1;
-	g_pd3dDevice->CreateShaderResourceView(g_pTexture, &srvDesc, &g_pTextureSRV);
-}
-
 void AsyncCreateTexture();
 void StartRenderThead()
 {
@@ -344,6 +315,11 @@ void StartRenderThead()
 	g_hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
 	InitDevice();
+
+	std::vector<ColorData> imageData;
+	CreateMap(imageData, 1 << (DestMipMap - 1), 1 << (DestMipMap - 1));
+
+	GenerateMipmap(imageData, g_MipMapData, 1 << (DestMipMap - 1), 1 << (DestMipMap - 1));
 
 	// Start render thread
 	g_pRenderThread = new  std::thread(RenderThread, g_hwnd);
@@ -383,6 +359,8 @@ void WaitRenderThead()
 	g_pTextureSRV->Release();
 	g_pSamplerState->Release();
 
+	g_pCheckTexture->Release();
+
 	depthBuffer->Release();
 	depthStencilView->Release();
 
@@ -413,12 +391,7 @@ int g;
 
 void SyncAsyncThread()
 {
-	int AsyncTexture = g_CommandList.GetCount();
 
-	if (g_MaxAsyncTexturePerFrame <= 0)
-	{
-		g_MaxAsyncTexturePerFrame.store(512);
-	}
 }
 
 void SyncRenderThead()
@@ -633,7 +606,6 @@ void CreateConstBuffer()
 	g_pImmediateContext->Unmap(constantBuffer, 0);
 }
 
-
 void CreateResource()
 {
 	// 定义纹理描述
@@ -650,18 +622,28 @@ void CreateResource()
 	texDesc.CPUAccessFlags = 0;
 	texDesc.MiscFlags = 0;
 
-	std::vector<ColorData> imageData;
-	CreateMap(imageData, texDesc.Width, texDesc.Height);
-
-	
-	std::vector<std::vector<ColorData>> mipMapData;
-	GenerateMipmap(imageData, mipMapData, texDesc.Width, texDesc.Height);
-
 	// 创建纹理
 	CHECK_RESULT(g_pd3dDevice->CreateTexture2D(&texDesc, nullptr, &g_pTexture));
 
+	// 创建临时纹理资源
+	D3D11_TEXTURE2D_DESC tempTextureDesc = texDesc;
+	
+	tempTextureDesc.Width = 1 << (DestMipMap - 1);  // 纹理宽度
+	tempTextureDesc.Height = 1 << (DestMipMap - 1);  // 纹理高度
+	tempTextureDesc.MipLevels = DestMipMap;
+	tempTextureDesc.Usage = D3D11_USAGE_STAGING;
+	tempTextureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	tempTextureDesc.BindFlags = 0;
 
-	UINT numMipLevels = static_cast<UINT>(mipMapData.size());
+	CHECK_RESULT(g_pd3dDevice->CreateTexture2D(&tempTextureDesc, nullptr, &g_pCheckTexture));
+
+
+	int NumSharedMips = min(DestMipMap, SrcMipMap);
+
+	int SourceMipOffset = SrcMipMap - NumSharedMips;
+	int DestMipOffset = DestMipMap - NumSharedMips;
+
+	UINT numMipLevels = SrcMipMap;
 	for (UINT mipLevel = 0; mipLevel < numMipLevels; ++mipLevel)
 	{
 		// 计算当前Mipmap级别的宽度和高度
@@ -672,7 +654,7 @@ void CreateResource()
 		UINT mipDataSize = mipWidth * mipHeight * sizeof(DWORD);
 
 		// 更新当前Mipmap级别的数据
-		g_pImmediateContext->UpdateSubresource(g_pTexture, mipLevel, nullptr, mipMapData[mipLevel].data(), mipWidth * sizeof(DWORD), 0);
+		g_pImmediateContext->UpdateSubresource(g_pTexture, mipLevel, nullptr, g_MipMapData[mipLevel + DestMipOffset].data(), mipWidth * sizeof(DWORD), 0);
 	}
 
 
@@ -736,7 +718,6 @@ void CreateResource()
 
 /** Maximum number of miplevels in a texture. */
 enum { MAX_TEXTURE_MIP_COUNT = 15 };
-int NumInitialMips = 1;
 
 void InitRHIStreamableTextureResource()
 {
@@ -754,26 +735,23 @@ void InitRHIStreamableTextureResource()
 	texDesc.CPUAccessFlags = 0;
 	texDesc.MiscFlags = 0;
 
-	std::vector<ColorData> imageData;
-	CreateMap(imageData, texDesc.Width, texDesc.Height);
-
-
 	D3D11_SUBRESOURCE_DATA SubResourceData[MAX_TEXTURE_MIP_COUNT];
 	memset(SubResourceData,  0, sizeof(D3D11_SUBRESOURCE_DATA) * MAX_TEXTURE_MIP_COUNT);
 
+	int NumInitialMips = DestMipMap - SrcMipMap;
 	for (int MipIndex = 0; MipIndex < NumInitialMips; ++MipIndex)
 	{
-		int NumBlocksX = texDesc.Width;
-		int NumBlocksY = texDesc.Height;
+		int NumBlocksX = texDesc.Width >> MipIndex;
+		int NumBlocksY = texDesc.Height >> MipIndex;
 
-		SubResourceData[MipIndex].pSysMem = imageData.data();
+		SubResourceData[MipIndex].pSysMem = g_MipMapData[MipIndex].data();
 		SubResourceData[MipIndex].SysMemPitch = NumBlocksX * 4;
 		SubResourceData[MipIndex].SysMemSlicePitch = NumBlocksX * NumBlocksY * 4;
 	}
 
 
 	std::vector<ColorData> imageDataZero;
-	imageDataZero.resize(imageData.size());
+	imageDataZero.resize(g_MipMapData[0].size());
 	memset(imageDataZero.data(), 0, imageDataZero.size() * sizeof(ColorData));
 
 	for (int MipIndex = NumInitialMips; MipIndex < DestMipMap; ++MipIndex)
@@ -808,10 +786,9 @@ void AsyncCreateTexture()
 {
 	while (!g_bQuit)
 	{
-		if (!g_bSyncCreateTexture && g_MaxAsyncTexturePerFrame.load() > 0)
+		if (!g_bSyncCreateTexture && g_CommandList.GetCount() < g_MaxAsyncTexturePerFrame)
 		{
 			InitRHIStreamableTextureResource();
-			g_MaxAsyncTexturePerFrame--;
 		}
 	}
 }
@@ -879,6 +856,32 @@ void RenderThread(HWND hwnd)
 			g_pImmediateContext->PSSetShaderResources(0, 1, &pCommand->SRView);
 
 			g_pImmediateContext->DrawIndexed(36, 0, 0);
+
+
+			// 复制纹理数据
+			g_pImmediateContext->CopyResource(g_pCheckTexture, pCommand->IntermediateTextureRHI);
+
+			for (int idx = 0; idx < DestMipMap; idx++)
+			{
+				// 获取临时纹理的数据
+				D3D11_MAPPED_SUBRESOURCE mappedResource;
+				CHECK_RESULT(g_pImmediateContext->Map(g_pCheckTexture, idx, D3D11_MAP_READ, 0, &mappedResource));
+
+				int bytes = mappedResource.RowPitch * (1 << (DestMipMap - idx - 1));
+
+				int SrcBytes = static_cast<int>(g_MipMapData[idx].size()) * sizeof(ColorData);
+				if (bytes == SrcBytes)
+				{
+					if (memcmp(mappedResource.pData, g_MipMapData[idx].data(), bytes))
+					{
+						MessageBox(nullptr, L"Texture Data MisMatch!!!", L"Error", MB_OK | MB_ICONERROR); 
+					} 
+
+				}
+
+				// 取消映射
+				g_pImmediateContext->Unmap(g_pCheckTexture, idx);
+			}
 
 			delete pCommand;
 			pCommand = g_CommandList.Dequeue();
