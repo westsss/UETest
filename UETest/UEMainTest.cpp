@@ -39,13 +39,16 @@ HANDLE g_hConsole;
 
 std::thread* g_pRenderThread = nullptr;
 
-int g_AsyncThreadNum = 7;
+int g_AsyncThreadNum = 6;
 std::vector<std::thread*> g_ListAsyncThread;
 
 int g_MaxAsyncTexturePerFrame = 256;
 
 int DestMipMap = 9;
 int SrcMipMap = 7;
+
+
+float  SizeConsumeVideo = 20.0f * 1024 * 1024 * 1024;
 
 struct ColorData
 {
@@ -724,6 +727,54 @@ void CreateResource()
 /** Maximum number of miplevels in a texture. */
 enum { MAX_TEXTURE_MIP_COUNT = 15 };
 
+void ConsumeVideoMemory()
+{
+	int MaxSize = 1 << (MAX_TEXTURE_MIP_COUNT - 1);
+
+	// 定义纹理描述
+	D3D11_TEXTURE2D_DESC texDesc;
+	ZeroMemory(&texDesc, sizeof(texDesc));
+	texDesc.Width = MaxSize;  // 纹理宽度
+	texDesc.Height = MaxSize;  // 纹理高度
+	texDesc.MipLevels = MAX_TEXTURE_MIP_COUNT;
+	texDesc.ArraySize = 1;
+	texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // 像素格式
+	texDesc.SampleDesc.Count = 1;
+	texDesc.Usage = D3D11_USAGE_DEFAULT;
+	texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+	texDesc.MiscFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA SubResourceData[MAX_TEXTURE_MIP_COUNT];
+	memset(SubResourceData, 0, sizeof(D3D11_SUBRESOURCE_DATA) * MAX_TEXTURE_MIP_COUNT);
+
+
+	std::vector<ColorData> imageDataZero;
+	imageDataZero.resize(MaxSize * MaxSize);
+	memset(imageDataZero.data(), 0, imageDataZero.size() * sizeof(ColorData));
+
+	for (int MipIndex = 0; MipIndex < MAX_TEXTURE_MIP_COUNT; ++MipIndex)
+	{
+		int NumBlocksX = texDesc.Width >> MipIndex;
+		int NumBlocksY = texDesc.Height >> MipIndex;
+		int MipSize = NumBlocksX * NumBlocksY * 4;
+
+		SubResourceData[MipIndex].pSysMem = imageDataZero.data();
+		SubResourceData[MipIndex].SysMemPitch = NumBlocksX * 4;
+		SubResourceData[MipIndex].SysMemSlicePitch = MipSize;
+	}
+
+	int Count = static_cast<int>((float)SizeConsumeVideo / (MaxSize * MaxSize * sizeof(ColorData)));
+
+	for (int idx = 0; idx < Count; idx++)
+	{
+		// 创建纹理
+		ID3D11Texture2D* pTmpTexture = nullptr;
+		CHECK_RESULT(g_pd3dDevice->CreateTexture2D(&texDesc, SubResourceData, &pTmpTexture));
+	}
+
+}
+
 void InitRHIStreamableTextureResource()
 {
 	// 定义纹理描述
@@ -794,6 +845,14 @@ void AsyncCreateTexture()
 		if (!g_bSyncCreateTexture && AsynCreateTextureCount > 0)
 		{
 			InitRHIStreamableTextureResource();
+
+			std::string str = "AsynCreateTextureCount  ";
+			str += std::to_string(AsynCreateTextureCount);
+			str += "\n";
+
+			DWORD bytesWritten;
+			WriteConsoleA(g_hConsole, str.c_str(), static_cast<DWORD>(str.length()), &bytesWritten, nullptr);
+
 			AsynCreateTextureCount--;
 		}
 	}
@@ -811,6 +870,9 @@ void RenderThread(HWND hwnd)
 	vp.TopLeftX = 0;   
 	vp.TopLeftY = 0;
 	g_pImmediateContext->RSSetViewports(1, &vp);
+
+
+	ConsumeVideoMemory();
 
 	CreateVertexBuffer();
 	CreateIndexBuffer();
