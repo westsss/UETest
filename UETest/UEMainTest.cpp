@@ -42,7 +42,7 @@ std::thread* g_pRenderThread = nullptr;
 int g_AsyncThreadNum = 6;
 std::vector<std::thread*> g_ListAsyncThread;
 
-int g_MaxAsyncTexturePerFrame = 256;
+int g_MaxAsyncTexturePerFrame = 1024;
 
 int DestMipMap = 9;
 int SrcMipMap = 7;
@@ -391,7 +391,7 @@ bool ready = false;
 
 int frameCount = 0;
 
-volatile int AsynCreateTextureCount = g_MaxAsyncTexturePerFrame;
+std::atomic<int> AsynCreateTextureCount = g_MaxAsyncTexturePerFrame;
 
 void SyncAsyncThread()
 {
@@ -842,7 +842,9 @@ void AsyncCreateTexture()
 {
 	while (!g_bQuit)
 	{
-		if (!g_bSyncCreateTexture && AsynCreateTextureCount > 0)
+		if (!g_bSyncCreateTexture && 
+			AsynCreateTextureCount > 0 &&
+			g_CommandList.GetCount() < g_MaxAsyncTexturePerFrame)
 		{
 			InitRHIStreamableTextureResource();
 
