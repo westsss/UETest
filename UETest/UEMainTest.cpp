@@ -39,10 +39,10 @@ HANDLE g_hConsole;
 
 std::thread* g_pRenderThread = nullptr;
 
-int g_AsyncThreadNum = 6;
+int g_AsyncThreadNum = 7;
 std::vector<std::thread*> g_ListAsyncThread;
 
-int g_MaxAsyncTexturePerFrame = 512;
+int g_MaxAsyncTexturePerFrame = 256;
 
 int DestMipMap = 9;
 int SrcMipMap = 7;
@@ -387,17 +387,19 @@ std::condition_variable cv;
 bool ready = false;
 
 int frameCount = 0;
-int g;
+
+volatile int AsynCreateTextureCount = g_MaxAsyncTexturePerFrame;
 
 void SyncAsyncThread()
 {
-
+	if (AsynCreateTextureCount <= 0)
+	{
+		AsynCreateTextureCount = g_MaxAsyncTexturePerFrame;
+	}
 }
 
 void SyncRenderThead()
 {
-	SyncAsyncThread();
-
 	// 等待两帧渲染完成
 	std::unique_lock<std::mutex> lock(mutex);
 	cv.wait(lock, [] { return frameCount >= SyncFrame; });
@@ -405,6 +407,9 @@ void SyncRenderThead()
 	// 继续处理下一帧游戏逻辑
 	frameCount -= SyncFrame;
 	lock.unlock();
+
+	SyncAsyncThread();
+
 }
 
 struct Vertex {
@@ -786,9 +791,10 @@ void AsyncCreateTexture()
 {
 	while (!g_bQuit)
 	{
-		if (!g_bSyncCreateTexture && g_CommandList.GetCount() < g_MaxAsyncTexturePerFrame)
+		if (!g_bSyncCreateTexture && AsynCreateTextureCount > 0)
 		{
 			InitRHIStreamableTextureResource();
+			AsynCreateTextureCount--;
 		}
 	}
 }
