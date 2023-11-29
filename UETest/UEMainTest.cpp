@@ -921,7 +921,7 @@ void RenderThread(HWND hwnd)
 		while (pCommand)
 		{
 			pCommand->Execute();
-
+			 
 			// 设置纹理资源
 			g_pImmediateContext->PSSetShaderResources(0, 1, &pCommand->SRView);
 
